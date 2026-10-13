@@ -3,12 +3,14 @@ package server
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/Parcifallll/trip-go/internal/domain"
 	"github.com/Parcifallll/trip-go/internal/generated"
 	"github.com/Parcifallll/trip-go/internal/handler"
 	"github.com/go-chi/chi/v5"
@@ -16,8 +18,12 @@ import (
 )
 
 type Config struct {
-	HTTPAddr        string
-	ShutdownTimeout time.Duration
+	HTTPAddr              string
+	ShutdownTimeout       time.Duration
+	HTTPReadTimeout       time.Duration
+	HTTPReadHeaderTimeout time.Duration
+	HTTPWriteTimeout      time.Duration
+	HTTPIdleTimeout       time.Duration
 }
 
 type Server struct {
@@ -36,21 +42,27 @@ func NewServer(
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	apiHandler := api.HandlerFromMux(
+	apiHandler := api.HandlerWithOptions(
 		&apiServer{
 			tripHandler:   tripHandler,
 			healthHandler: healthHandler,
 		},
-		r,
+		api.ChiServerOptions{
+			BaseRouter: r,
+			ErrorHandlerFunc: func(w http.ResponseWriter, req *http.Request, err error) {
+				log.Printf("request params error: %s %s: %v", req.Method, req.URL.Path, err)
+				handler.WriteError(w, domain.ErrInvalidRequest, req.URL.Path)
+			},
+		},
 	)
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           apiHandler,
-		ReadTimeout:       10 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		ReadTimeout:       cfg.HTTPReadTimeout,
+		ReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
+		WriteTimeout:      cfg.HTTPWriteTimeout,
+		IdleTimeout:       cfg.HTTPIdleTimeout,
 	}
 
 	return &Server{
@@ -73,6 +85,7 @@ func (s *Server) Run() error {
 
 	go func() {
 		if err := s.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("http server error: %v", err)
 		}
 	}()
 

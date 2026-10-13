@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -68,14 +69,6 @@ func (h *TripHandler) CreateTrip(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 
 	err = h.txManager.Do(ctx, func(ctx context.Context) error {
-		hasActive, err := h.tripRepo.CheckDriverActive(ctx, driverID)
-		if err != nil {
-			return err
-		}
-		if hasActive {
-			return domain.ErrDriverBusy
-		}
-
 		trip := repository.Trip{
 			ID:             tripID,
 			UserID:         userID,
@@ -217,7 +210,17 @@ func toAPITrip(t *repository.Trip) api.Trip {
 }
 
 func decodeJSONBody(r *http.Request, v any) error {
-	return json.NewDecoder(r.Body).Decode(v)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+
+	if dec.More() {
+		return errors.New("request body must contain a single JSON object")
+	}
+	return nil
 }
 
 func encodeJSON(w http.ResponseWriter, v any) error {

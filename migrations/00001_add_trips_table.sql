@@ -1,5 +1,5 @@
 -- +goose Up
-CREATE TABLE IF NOT EXISTS trips
+CREATE TABLE trips
 (
     id              UUID PRIMARY KEY,
     user_id         UUID             NOT NULL,
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS trips
         )
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS trips_driver_active_idx
+CREATE UNIQUE INDEX trips_driver_active_idx
     ON trips (driver_id)
     WHERE status = 'active';
 CREATE INDEX trips_status_started_at_idx ON trips (status, started_at);

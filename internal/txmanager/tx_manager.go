@@ -23,7 +23,7 @@ func NewTxManager(pool *pgxpool.Pool) TxManager {
 type txKey string
 
 // TxKey is the context key for storing transaction
-const TxKey txKey = "txmanager.tx"
+const ctxKeyTx txKey = "txmanager.tx"
 
 func (m *txManager) Do(ctx context.Context, fn func(ctx context.Context) error) error {
 	if tx := GetTx(ctx); tx != nil {
@@ -46,7 +46,7 @@ func (m *txManager) Do(ctx context.Context, fn func(ctx context.Context) error) 
 		}
 	}()
 
-	if err := fn(context.WithValue(ctx, TxKey, tx)); err != nil {
+	if err := fn(context.WithValue(ctx, ctxKeyTx, tx)); err != nil {
 		if rbErr := tx.Rollback(rollbackCtx); rbErr != nil {
 			return fmt.Errorf("rollback: %w (original: %w)", rbErr, err)
 		}
@@ -61,7 +61,7 @@ func (m *txManager) Do(ctx context.Context, fn func(ctx context.Context) error) 
 }
 
 func GetTx(ctx context.Context) pgx.Tx {
-	if tx, ok := ctx.Value(TxKey).(pgx.Tx); ok {
+	if tx, ok := ctx.Value(ctxKeyTx).(pgx.Tx); ok {
 		return tx
 	}
 	return nil

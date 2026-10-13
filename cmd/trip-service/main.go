@@ -50,8 +50,12 @@ func main() {
 	healthHandler := handler.NewHealthHandler(pool)
 
 	srv := server.NewServer(server.Config{
-		HTTPAddr:        cfg.HTTPAddr,
-		ShutdownTimeout: cfg.ShutdownTimeout,
+		HTTPAddr:              cfg.HTTPAddr,
+		ShutdownTimeout:       cfg.ShutdownTimeout,
+		HTTPReadTimeout:       cfg.HTTPReadTimeout,
+		HTTPReadHeaderTimeout: cfg.HTTPReadHeaderTimeout,
+		HTTPWriteTimeout:      cfg.HTTPWriteTimeout,
+		HTTPIdleTimeout:       cfg.HTTPIdleTimeout,
 	}, tripHandler, healthHandler)
 
 	log.Printf("starting server on %s", cfg.HTTPAddr)

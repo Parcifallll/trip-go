@@ -128,32 +128,17 @@ func (r *TripRepository) Finish(ctx context.Context, id uuid.UUID, finishedAt ti
 }
 
 func (r *TripRepository) Exists(ctx context.Context, id uuid.UUID) (bool, error) {
-	sql, args, err := r.sb.Select("1").From("trips").Where(squirrel.Eq{"id": id}).ToSql()
+	sub := squirrel.Select("1").From("trips").Where(squirrel.Eq{"id": id})
+
+	sql, args, err := r.sb.Select().Column(squirrel.Expr("EXISTS(?)", sub)).ToSql()
 	if err != nil {
 		return false, fmt.Errorf("build exists: %w", err)
 	}
 
 	var exists bool
-	err = r.getExecutor(ctx).QueryRow(ctx, "SELECT EXISTS("+sql+")", args...).Scan(&exists)
+	err = r.getExecutor(ctx).QueryRow(ctx, sql, args...).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("scan exists: %w", err)
-	}
-	return exists, nil
-}
-
-func (r *TripRepository) CheckDriverActive(ctx context.Context, driverID uuid.UUID) (bool, error) {
-	sql, args, err := r.sb.Select("1").
-		From("trips").
-		Where(squirrel.Eq{"driver_id": driverID, "status": "active"}).
-		ToSql()
-	if err != nil {
-		return false, fmt.Errorf("build check driver active: %w", err)
-	}
-
-	var exists bool
-	err = r.getExecutor(ctx).QueryRow(ctx, "SELECT EXISTS("+sql+")", args...).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("scan check driver active: %w", err)
 	}
 	return exists, nil
 }
