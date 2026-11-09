@@ -1,44 +1,69 @@
-# TripGo — репозиторий для лабораторных работ
+# Лабораторная работа 2. Архитектура, качество кода и observability
 
-Заготовка курса «Разработка микросервисов на Go». Здесь вы делаете все пять
-работ: каждая следующая продолжает предыдущую, переписывать сервис с нуля не
-нужно.
-
-## Что делать сразу
-
-1. **Fork** этого репозитория к себе. Форк нужен, чтобы преподаватели видели
-   список всех работ курса одной страницей.
-2. Заведите модуль:
+## Запуск
 
 ```bash
-git clone git@github.com:<ваш-логин>/<ваш-репозиторий>.git
-cd <ваш-репозиторий>
-go mod init github.com/<ваш-логин>/<ваш-репозиторий>
+tripgoctl environment start
+tripgoctl connect        # формирует .env, печатает ссылки на Jaeger, Grafana, Prometheus
+make migrate
+make run
 ```
 
-Путь модуля потом не меняется — иначе придётся править все импорты. Проще всего
-взять адрес своего репозитория, каким бы он ни был.
+Проверки:
 
-Дальше — [`homework/docs/getting-started.md`](https://github.com/course-go-autumn-2026/course/blob/main/homework/docs/getting-started.md)
-в репозитории курса: инструменты, окружение, миграции, вид сданной работы.
+```bash
+make lint
+make test                # с -race, печатает покрытие usecase и domain
+make test-integration    # нужна запущенная инфра (tripgoctl environment start)
+make generate            # OpenAPI-код и моки (go generate ./...)
+```
 
-## Где что лежит
+## Переменные окружения
 
-| Что | Где |
+Те же, что в ЛР1 + телеметрия:
+
+| Переменная | Назначение |
 |---|---|
-| Задания, документация, контракты | [`course-go-autumn-2026/course`](https://github.com/course-go-autumn-2026/course) |
-| Слайды и записи лекций | [`lections/`](https://github.com/course-go-autumn-2026/course/tree/main/lections) |
-| Как оценивают, дедлайны, порядок сдачи | [`homework/docs/grading.md`](https://github.com/course-go-autumn-2026/course/blob/main/homework/docs/grading.md) |
-| Локальное окружение и утилита `tripgoctl` | [`course-go-autumn-2026/course-infra`](https://github.com/course-go-autumn-2026/course-infra) |
+| `OTEL_SERVICE_NAME` | имя сервиса |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | адрес коллектора |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | протокол OTLP |
+| `OTEL_RESOURCE_ATTRIBUTES` | атрибуты ресурса |
+| `OTEL_TRACES_SAMPLER` | сэмплирование трейсов |
 
-Задания появляются по мере курса, каждое — после своей пары лекций.
+## Архитектура
 
-## Как сдавать
+```
+cmd/service          main: читает конфиг, вызывает container.New, ждёт сигнала
+internal/container   создаёт все зависимости и связывает их (единственное место)
+internal/domain/trip сущность Trip, статусы, переходы, доменные ошибки
+internal/model       структуры, которые ходят между слоями
+internal/usecase     create, get, finish
+internal/http        транспорт: ручки, маппинг ошибок, middleware, сервер
+internal/repository  работа с PostgreSQL
+internal/infra       пул pgx, менеджер транзакций, телеметрия
+```
 
-Ветка `homework/NN` от `main`, pull request в `main` своего форка, ССЫЛКУ НИКУДА СКИДЫВАТЬ НЕ НУЖНО, ревьюер сам найдет ее внутри вашего форка. Подробно — в `grading.md` репозитория курса.
+Зависимости направлены внутрь: `http` и `repository` знают про `usecase`, `usecase` знает про `domain`, `domain` не знает ни про кого. Правила проверяет `depguard` в `.golangci.yml`:
 
-## Чужие работы
+- `domain` не импортирует `net/http`, chi, pgx, squirrel, otel и сгенерированный API;
+- `usecase` не импортирует `net/http`, chi, pgx, squirrel и сгенерированный API;
+- `http/*` не импортирует `repository` и `infra`.
 
-Форки видны всем, включая ваши. Смотреть чужие решения, пока идёт курс, —
-плохая идея: одинаковый код виден сразу, а разбираться на защите придётся
-самому.
+**Интерфейсы.** Объявлены неэкспортируемыми в `contract.go` пакета-потребителя (`usecase/trip/*`, `http/trip/*`, `http/health`, `repository/trip`). Потребитель сам формулирует, что ему нужно, поэтому интерфейсы узкие, а реализацию можно заменить без правок потребителя. Моки генерируются `mockgen` в `mocks_test.go` рядом с кодом.
+
+**Ошибки.** Доменные ошибки лежат в `domain/trip`. Перевод «ошибка → Problem» сделан в одном месте, `http/domainerror`, детали внутренних ошибок клиенту не отдаются.
+
+## Отступления от целевой структуры
+
+- `http/server`: роутер, адаптер к сгенерированному `api.ServerInterface` (он один на весь сервис) и graceful shutdown. Не ручка и не middleware, но относится к транспорту.
+- `http/response`: общая запись JSON-ответа для всех ручек.
+- `http/trip/dto`: преобразование `trip.Trip` в `api.Trip`, общее для `create`, `get` и `finish`, чтобы не дублировать код.
+
+## Телеметрия
+
+Метрики и трейсы уходят по OTLP в коллектор. Логи: `slog`, JSON, в записи есть `trace_id` и `span_id`.
+
+
+![Jaeger](docs/img/Jaeger.png)
+
+![Grafana](docs/img/Grafana.png)
