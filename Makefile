@@ -10,6 +10,15 @@ infra-start: ## Запустить инфраструктуру
 infra-stop: ## Остановить инфраструктуру
 	tripgoctl environment stop
 
+cluster-start: ## один раз на машине
+	tripgoctl cluster start
+
+cluster-connect:  ## адреса и ссылки на веб-интерфейсы
+	tripgoctl connect
+
+get-pods:
+	kubectl get pods -n tripgo-lab-02
+
 migrate-create: ## Создать SQL-миграцию с порядковым номером
 	go tool goose -s -dir migrations create "$(NAME)" sql
 
@@ -23,9 +32,9 @@ migrate-status: ## Статус миграций
 	go tool goose -dir migrations postgres "$(DATABASE_URL)" status
 
 run: ## Запустить сервис локально
-	go run cmd/trip-service/main.go
+	go run cmd/service/main.go
 
-generate: generate-openapi ## Все генерации
+generate: generate-openapi generate-mockgen ## Все генерации
 
 generate-openapi: ## Сгенерировать типы и интерфейсы из OpenAPI
 	go tool oapi-codegen \
@@ -33,3 +42,16 @@ generate-openapi: ## Сгенерировать типы и интерфейсы
       -package api \
       -o internal/generated/api.gen.go \
       contracts/openapi/trip-service.openapi.yaml
+
+generate-mockgen:
+	go generate ./...
+
+test:
+	go test -race -count=1 -coverpkg=./internal/usecase/...,./internal/domain/... -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out | tail -n 1
+
+test-integration:
+	go test -race -count=1 -tags=integration ./...
+
+lint:
+	golangci-lint run

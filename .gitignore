@@ -7,3 +7,5 @@ bin/
 
 .DS_Store
 /trip-service.exe
+
+coverage.out
